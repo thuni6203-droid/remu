@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Remu</title>
+<link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#0b1220"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{--bg:#0b1220;--card:#131c2e;--line:#22304a;--tx:#e6edf7;--mut:#8a9ab5;--ac:#35c4ff;--ok:#3ddc97;--bad:#ff4d5e;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:dark}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){--bg:#f3f6fb;--card:#fff;--line:#d7dfec;--tx:#101828;--mut:#5b6b85;--ac:#0a7fc2;--ok:#12935b;--bad:#d62839;color-scheme:light}}
+:root[data-theme="dark"]{--bg:#0b1220;--card:#131c2e;--line:#22304a;--tx:#e6edf7;--mut:#8a9ab5;--ac:#35c4ff;--ok:#3ddc97;--bad:#ff4d5e}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.logo{font-weight:800;letter-spacing:.15em;font-size:18px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--ok);display:inline-block;margin-right:5px}
+.st{font-size:12px;color:var(--mut);flex:1;line-height:1.2}
+#kill{background:var(--bad);color:#fff;border:0;border-radius:12px;font-weight:800;font-size:15px;padding:14px 16px;min-width:96px;min-height:48px}
+nav{display:flex;border-bottom:1px solid var(--line)}
+nav button{flex:1;background:none;border:0;color:var(--mut);padding:12px;font-size:15px;border-bottom:3px solid transparent}
+nav button.on{color:var(--ac);border-color:var(--ac);font-weight:700}
+main{flex:1;min-height:0;display:flex;flex-direction:column}
+.pane{display:none;flex:1;min-height:0;flex-direction:column}.pane.on{display:flex}
+#log{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
+.m{max-width:86%;padding:10px 12px;border-radius:14px;white-space:pre-wrap;word-wrap:break-word;background:var(--card);border:1px solid var(--line)}
+.m.u{align-self:flex-end;background:var(--ac);color:#04121f;border-color:var(--ac)}
+.m.s{align-self:center;color:var(--mut);font-size:13px;background:none;border:0}
+.bar{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line)}
+input[type=text],input[type=password],textarea{flex:1;background:var(--card);color:var(--tx);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:16px;min-width:0}
+.b{background:var(--card);color:var(--tx);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:15px;min-height:46px}
+.b.p{background:var(--ac);color:#04121f;border-color:var(--ac);font-weight:700}
+.b.rec{background:var(--bad);color:#fff;border-color:var(--bad)}
+.b.d{color:var(--bad);border-color:var(--bad)}
+.pad{padding:12px;overflow-y:auto;flex:1}
+.row{display:flex;align-items:center;gap:10px;padding:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:8px}
+.row span{flex:1}.row.done span{text-decoration:line-through;color:var(--mut)}
+.row input[type=checkbox]{width:22px;height:22px}
+.x{background:none;border:0;color:var(--mut);font-size:20px;padding:4px 8px}
+h3{margin:14px 0 8px;font-size:14px;color:var(--mut);text-transform:uppercase;letter-spacing:.08em}
+.note{font-size:13px;color:var(--mut)}
+#stopped{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:9;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:24px;color:#fff}
+#stopped.on{display:flex}
+#stopped h2{margin:0;font-size:26px;color:var(--bad)}
+textarea{width:100%;height:120px;font-size:12px;display:none;margin-top:8px}
+.dt{flex:1 1 100%}.sm{font-size:12px;color:var(--mut)}.od{color:var(--bad)}
+body.hc{--bg:#000;--card:#000;--line:#fff;--tx:#fff;--mut:#ddd}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">REMU</div>
+  <div class="st"><span class="dot" id="dot"></span><span id="net">Online</span><br><span id="mode">Active</span></div>
+  <button id="kill" aria-label="Kill switch">■ STOP</button>
+</header>
+<nav><button data-t="chat" class="on">Chat</button><button data-t="tasks">Tasks</button><button data-t="mem">Memory</button><button data-t="set">Settings</button></nav>
+<main>
+  <section class="pane on" id="p-chat">
+    <div id="log"></div>
+    <div class="bar">
+      <button class="b" id="mic" aria-label="Press to talk">🎤</button>
+      <input type="text" id="in" placeholder="Message Remu…" autocomplete="off">
+      <button class="b p" id="send">Send</button>
+    </div>
+  </section>
+  <section class="pane" id="p-tasks">
+    <div class="pad"><div id="tl"></div><p class="note" id="te"></p></div>
+    <div class="bar" style="flex-wrap:wrap"><input type="text" id="ti" placeholder="New task…"><button class="b p" id="ta">Add</button><input type="datetime-local" id="td" class="dt" aria-label="Due date (optional)"></div>
+  </section>
+  <section class="pane" id="p-mem">
+    <div class="pad"><p class="note">Remu only remembers what you approve. You can also type “remember …” in chat.</p><div id="ml"></div><p class="note" id="me"></p></div>
+    <div class="bar"><input type="text" id="mi" placeholder="Add a memory…"><button class="b p" id="ma">Save</button></div>
+  </section>
+  <section class="pane" id="p-set">
+    <div class="pad">
+      <h3>Remu</h3>
+      <div class="row"><span>Remu on</span><input type="checkbox" id="s-on" checked></div>
+      <div class="row"><span>Read answers aloud</span><input type="checkbox" id="s-voice" checked></div>
+      <div class="row"><span>Daily briefing when opened</span><input type="checkbox" id="s-brief"></div>
+      <div class="row"><span>Task reminders (only while Remu is open)</span><input type="checkbox" id="s-rem"></div>
+      <div class="row"><span>Text size</span><button class="b" id="fm">A−</button><button class="b" id="fp">A+</button></div>
+      <div class="row"><span>High contrast</span><input type="checkbox" id="s-hc"></div>
+      <h3>AI provider</h3>
+      <div class="row" style="flex-wrap:wrap"><select id="s-prov" class="b"><option value="gemini">Google Gemini</option><option value="groq">Groq</option></select><input type="password" id="s-key" placeholder="Paste your free API key" style="flex:1 1 100%"><input type="text" id="s-model" placeholder="Model (optional)" style="flex:1 1 100%"></div>
+      <p class="note">Your key stays on this phone only. Free keys: aistudio.google.com/apikey (Gemini) or console.groq.com/keys (Groq).</p>
+      <h3>Your data</h3>
+      <div class="row" style="flex-wrap:wrap"><button class="b" id="exJ">Export JSON</button><button class="b" id="exM">Export Markdown</button><button class="b" id="imB">Import backup</button><input type="file" id="imp" accept=".json" hidden><button class="b d" id="del">Delete everything</button></div>
+      <textarea id="ex" readonly></textarea>
+      <p class="note">Everything is stored only on this device. Chat replies come from an online AI and need internet. Voice input depends on Chrome on your phone.</p>
+    </div>
+  </section>
+</main>
+<div id="stopped"><h2>REMU STOPPED</h2><div>Listening, speech and active tasks are halted.<br>Nothing restarts automatically.</div><button class="b p" id="resume">Re-enable Remu</button></div>
+<script>
+(function(){
+var K='remu.v1',S={chat:[],tasks:[],mem:[],on:true,voice:true,kills:[],brief:false,remind:false,fs:16,hc:false,lastBrief:'',prov:'gemini',key:'',model:''};
+try{var r=localStorage.getItem(K);if(r)S=Object.assign(S,JSON.parse(r))}catch(e){}
+function save(){try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}}
+var $=function(i){return document.getElementById(i)};
+var stopped=false,ctl=null,rec=null,listening=false,sample=null;
+
+// tabs
+document.querySelectorAll('nav button').forEach(function(b){b.onclick=function(){
+  document.querySelectorAll('nav button').forEach(function(x){x.classList.toggle('on',x===b)});
+  document.querySelectorAll('.pane').forEach(function(p){p.classList.toggle('on',p.id==='p-'+b.dataset.t)})}});
+
+// status
+function status(){
+  var on=navigator.onLine;$('net').textContent=on?'Online':'Offline — online AI unavailable';
+  $('dot').style.background=on?'var(--ok)':'var(--mut)';
+  $('mode').textContent=stopped?'Stopped':(S.on?'Active':'Off');
+}
+addEventListener('online',status);addEventListener('offline',status);
+
+// chat
+function add(t,c){var d=document.createElement('div');d.className='m '+c;d.textContent=t;$('log').appendChild(d);$('log').scrollTop=1e9;return d}
+function renderChat(){$('log').innerHTML='';if(!S.chat.length)add('Good day. I’m Remu. Type or tap the mic to talk.','s');S.chat.forEach(function(m){add(m.t,m.r==='u'?'u':'a')})}
+function speak(t){if(!S.voice||stopped||!S.on||!window.speechSynthesis)return;speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(t);speechSynthesis.speak(u)}
+var KILLRE=/(kill switch|stop everything|emergency stop)/i;
+var SYS='You are REMU, a calm, confident, professional personal AI assistant inspired by JARVIS. Keep replies short and clear. Never claim to have performed an action (messages, device control, reminders) you cannot do from this chat; say what is needed instead. Remu can currently only chat and the user manages tasks in the Tasks tab.';
+
+function sysp(){return SYS+(S.mem.length?'\nThings the user asked you to remember:\n- '+S.mem.map(function(m){return m.t}).join('\n- '):'')+'\nToday is '+new Date().toDateString()+'.'}
+async function ask(text){
+  if(!text.trim())return;
+  if(KILLRE.test(text)){kill('typed command');return}
+  if(stopped||!S.on){add(stopped?'Remu is stopped. Re-enable to continue.':'Remu is switched off in Settings.','s');return}
+  var rm=text.match(/^remember(?: that|:)?\s+(.+)/i);
+  if(rm){if(confirm('Save to memory?\n\n'+rm[1])){addMem(rm[1]);add('Saved to memory: '+rm[1],'s')}else add('Not saved.','s');return}
+  if(/^(daily )?briefing\.?$/i.test(text.trim())){briefing();return}
+  if(!navigator.onLine){add('Online AI unavailable — you’re offline. Tasks and notes still work.','s');return}
+  S.chat.push({r:'u',t:text});save();add(text,'u');
+  var bub=add('…','a');
+  try{
+    if(!S.key){bub.textContent='Add your free AI key in Settings first.';return}
+    var P=PROV[S.prov]||PROV.gemini;
+    var h=S.chat.slice(-10).map(function(m){return{role:m.r==='u'?'user':'assistant',content:m.t}});
+    ctl=new AbortController();
+    var rs=await fetch(P.url,{method:'POST',signal:ctl.signal,headers:{'Content-Type':'application/json','Authorization':'Bearer '+S.key},body:JSON.stringify({model:S.model||P.model,messages:[{role:'system',content:sysp()}].concat(h)})});
+    if(!rs.ok){var cs=rs.status;bub.textContent=cs===429?'Online AI unavailable — free limit reached. Try again later.':(cs===400||cs===401||cs===403)?'The AI key or model was rejected. Check Settings.':'Online AI failed ('+cs+').';return}
+    var jj=await rs.json();
+    var out=(jj.choices&&jj.choices[0]&&jj.choices[0].message&&jj.choices[0].message.content)||'';bub.textContent=out;S.chat.push({r:'a',t:out});save();speak(out);
+  }catch(e){
+    if(stopped){bub.textContent='Stopped.';return}
+    var c=e&&e.code;
+    bub.textContent=c==='rate_limited'?'Online AI unavailable — rate limit reached. Try again shortly.':c==='not_granted'?'Permission for online AI was declined.':'Online AI failed. Please try again.';
+  }finally{ctl=null}
+}
+$('send').onclick=function(){var v=$('in').value;$('in').value='';ask(v)};
+$('in').onkeydown=function(e){if(e.key==='Enter')$('send').click()};
+
+// voice input (tap to start, tap to stop)
+var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+function stopListen(){listening=false;$('mic').classList.remove('rec');$('mic').textContent='🎤';if(rec){try{rec.abort()}catch(e){}rec=null}}
+$('mic').onclick=function(){
+  if(stopped||!S.on){add('Remu is stopped or off.','s');return}
+  if(!SR){add('Voice input isn’t supported in this browser. Use Chrome.','s');return}
+  if(listening){stopListen();return}
+  rec=new SR();rec.lang=navigator.language||'en-US';rec.interimResults=false;rec.maxAlternatives=1;
+  rec.onresult=function(e){var t=e.results[0][0].transcript;stopListen();ask(t)};
+  rec.onerror=function(e){stopListen();add('Microphone unavailable ('+(e.error||'error')+'). Check the browser permission.','s')};
+  rec.onend=function(){if(listening)stopListen()};
+  try{rec.start();listening=true;$('mic').classList.add('rec');$('mic').textContent='●'}catch(e){stopListen()}
+};
+
+// KILL SWITCH — client-side only, no network needed
+function kill(reason){
+  stopped=true;
+  try{if(ctl)ctl.abort()}catch(e){}
+  try{window.speechSynthesis&&speechSynthesis.cancel()}catch(e){}
+  stopListen();
+  S.kills.push({at:new Date().toISOString(),reason:reason||''});S.kills=S.kills.slice(-50);save();
+  $('stopped').classList.add('on');status();
+  try{if(navigator.vibrate)navigator.vibrate(200)}catch(e){}
+  try{if(window.speechSynthesis){var u=new SpeechSynthesisUtterance('Remu stopped');speechSynthesis.speak(u)}}catch(e){}
+}
+$('kill').onclick=function(){kill('button')};
+$('resume').onclick=function(){stopped=false;$('stopped').classList.remove('on');status();add('Remu re-enabled.','s')};
+
+// tasks
+function renderTasks(){
+  var l=$('tl');l.innerHTML='';$('te').textContent=S.tasks.length?'':'No tasks yet.';
+  S.tasks.forEach(function(t,i){
+    var d=document.createElement('div');d.className='row'+(t.d?' done':'');
+    var c=document.createElement('input');c.type='checkbox';c.checked=!!t.d;c.onchange=function(){t.d=c.checked;save();renderTasks()};
+    var s=document.createElement('span');s.textContent=t.t;
+    var x=document.createElement('button');x.className='x';x.textContent='✕';x.setAttribute('aria-label','Delete task');x.onclick=function(){S.tasks.splice(i,1);save();renderTasks()};
+    d.append(c,s,x);l.appendChild(d)});
+}
+function addTask(){var v=$('ti').value.trim();if(!v)return;S.tasks.push({t:v,d:false,at:Date.now()});$('ti').value='';save();renderTasks()}
+$('ta').onclick=addTask;$('ti').onkeydown=function(e){if(e.key==='Enter')addTask()};
+
+// settings
+$('s-on').checked=S.on;$('s-voice').checked=S.voice;
+$('s-on').onchange=function(){S.on=$('s-on').checked;if(!S.on){try{if(ctl)ctl.abort()}catch(e){}speechSynthesis&&speechSynthesis.cancel();stopListen()}save();status()};
+$('s-voice').onchange=function(){S.voice=$('s-voice').checked;if(!S.voice&&window.speechSynthesis)speechSynthesis.cancel();save()};
+
+async function exportData(kind){
+  var json=JSON.stringify({exported:new Date().toISOString(),chat:S.chat,tasks:S.tasks,settings:{on:S.on,voice:S.voice},killLog:S.kills},null,2);
+  var data=json,name='remu-export.json';
+  if(kind==='md'){name='remu-export.md';
+    data='# Remu export\n\n## Tasks\n'+(S.tasks.map(function(t){return '- ['+(t.d?'x':' ')+'] '+t.t}).join('\n')||'_none_')+
+    '\n\n## Chat\n'+(S.chat.map(function(m){return '**'+(m.r==='u'?'You':'Remu')+':** '+m.t}).join('\n\n')||'_none_')+
+    '\n\n## Kill switch log\n'+(S.kills.map(function(k){return '- '+k.at+' ('+k.reason+')'}).join('\n')||'_none_')+'\n'}
+  try{var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'text/plain'}));a.download=name;document.body.appendChild(a);a.click();a.remove();return}catch(e){}
+  var ta=$('ex');ta.style.display='block';ta.value=data;ta.focus();ta.select();
+}
+$('exJ').onclick=function(){exportData('json')};$('exM').onclick=function(){exportData('md')};
+$('del').onclick=function(){
+  if(!confirm('Delete all chats, tasks, settings and logs from this device? This cannot be undone.'))return;
+  S=defaults();try{localStorage.removeItem(K)}catch(e){}initUI();renderMem();
+  $('s-on').checked=true;$('s-voice').checked=true;$('ex').style.display='none';renderChat();renderTasks();status();
+};
+
+function defaults(){return{chat:[],tasks:[],mem:[],on:true,voice:true,kills:[],brief:false,remind:false,fs:16,hc:false,lastBrief:'',prov:'gemini',key:'',model:''}}
+function initUI(){document.body.style.fontSize=S.fs+'px';document.body.classList.toggle('hc',!!S.hc);$('s-on').checked=S.on;$('s-voice').checked=S.voice;$('s-brief').checked=S.brief;$('s-rem').checked=S.remind;$('s-hc').checked=S.hc;$('s-prov').value=S.prov;$('s-key').value=S.key;$('s-model').value=S.model}
+function fmt(ts){return new Date(ts).toLocaleString([],{dateStyle:'medium',timeStyle:'short'})}
+function mkBtn(txt,fn){var x=document.createElement('button');x.className='x';x.textContent=txt;x.onclick=fn;return x}
+function renderTasks(){
+  var l=$('tl');l.innerHTML='';
+  var open=S.tasks.filter(function(t){return !t.d}).sort(function(a,b){return (a.due||9e15)-(b.due||9e15)}),dn=S.tasks.filter(function(t){return t.d});
+  $('te').textContent=S.tasks.length?'':'No tasks yet.';
+  function row(t){
+    var d=document.createElement('div');d.className='row'+(t.d?' done':'');
+    var c=document.createElement('input');c.type='checkbox';c.checked=!!t.d;c.onchange=function(){t.d=c.checked;t.doneAt=t.d?Date.now():null;save();renderTasks()};
+    var s=document.createElement('span');s.textContent=t.t;
+    var sm=document.createElement('div');sm.className='sm';
+    if(t.d&&t.doneAt)sm.textContent='Done '+fmt(t.doneAt);
+    else if(t.due){sm.textContent='Due '+fmt(t.due);if(t.due<Date.now())sm.className='sm od'}
+    if(sm.textContent)s.appendChild(sm);
+    d.append(c,s,mkBtn('✕',function(){S.tasks.splice(S.tasks.indexOf(t),1);save();renderTasks()}));l.appendChild(d)}
+  open.forEach(row);
+  if(dn.length){var h=document.createElement('h3');h.textContent='History';l.appendChild(h);dn.sort(function(a,b){return (b.doneAt||0)-(a.doneAt||0)}).forEach(row);
+    var cl=document.createElement('button');cl.className='b d';cl.textContent='Clear completed';cl.onclick=function(){S.tasks=S.tasks.filter(function(t){return !t.d});save();renderTasks()};l.appendChild(cl)}
+}
+function addTask(){var v=$('ti').value.trim();if(!v)return;var dv=$('td').value;S.tasks.push({t:v,d:false,at:Date.now(),due:dv?new Date(dv).getTime():null});$('ti').value='';$('td').value='';save();renderTasks()}
+function renderMem(){var l=$('ml');l.innerHTML='';$('me').textContent=S.mem.length?'':'Nothing saved yet.';S.mem.forEach(function(m,i){var d=document.createElement('div');d.className='row';var s=document.createElement('span');s.textContent=m.t;d.append(s,mkBtn('✕',function(){S.mem.splice(i,1);save();renderMem()}));l.appendChild(d)})}
+function addMem(t){t=(t||'').trim();if(!t)return;S.mem.push({t:t,at:Date.now()});save();renderMem()}
+$('ma').onclick=function(){addMem($('mi').value);$('mi').value=''};
+$('mi').onkeydown=function(e){if(e.key==='Enter')$('ma').click()};
+function briefing(){var n=Date.now(),e=new Date();e.setHours(23,59,59,999);var o=S.tasks.filter(function(t){return !t.d}),od=o.filter(function(t){return t.due&&t.due<n}),td=o.filter(function(t){return t.due&&t.due>=n&&t.due<=e.getTime()});
+  var t='Briefing for '+new Date().toDateString()+'.\n'+o.length+' open task'+(o.length==1?'':'s')+'.';
+  if(od.length)t+='\nOverdue: '+od.map(function(x){return x.t}).join(', ');
+  if(td.length)t+='\nDue today: '+td.map(function(x){return x.t}).join(', ');
+  if(!od.length&&!td.length)t+='\nNothing due today.';
+  add(t,'a');S.lastBrief=new Date().toDateString();save();speak(t)}
+function maybeBrief(){if(S.brief&&!stopped&&S.on&&S.lastBrief!==new Date().toDateString())briefing()}
+function remCheck(){if(stopped||!S.on||!S.remind)return;var n=Date.now();S.tasks.forEach(function(t){if(!t.d&&t.due&&t.due<=n&&!t.rem){t.rem=1;save();var m='Reminder: '+t.t;add(m,'a');speak(m);try{if(window.Notification&&Notification.permission==='granted')new Notification('Remu',{body:t.t})}catch(e){}}})}
+setInterval(remCheck,30000);document.addEventListener('visibilitychange',function(){if(!document.hidden){remCheck();maybeBrief()}});
+$('s-brief').onchange=function(){S.brief=this.checked;save();if(S.brief)maybeBrief()};
+$('s-rem').onchange=function(){S.remind=this.checked;save();if(S.remind&&window.Notification&&Notification.permission==='default')Notification.requestPermission()};
+$('s-hc').onchange=function(){S.hc=this.checked;save();initUI()};
+$('fm').onclick=function(){S.fs=Math.max(13,S.fs-2);save();initUI()};
+$('fp').onclick=function(){S.fs=Math.min(26,S.fs+2);save();initUI()};
+$('imB').onclick=function(){$('imp').click()};
+$('imp').onchange=function(){var f=this.files[0];if(!f)return;f.text().then(function(x){var j=JSON.parse(x);if(!confirm('Replace current data with this backup?'))return;S=Object.assign(defaults(),{chat:j.chat||[],tasks:j.tasks||[],mem:j.memory||[],kills:j.killLog||[]},j.settings||{});save();initUI();renderChat();renderTasks();renderMem();status()}).catch(function(){add('That file couldn’t be read.','s')})};
+async function exportData(kind){
+  var json=JSON.stringify({exported:new Date().toISOString(),chat:S.chat,tasks:S.tasks,memory:S.mem,settings:{on:S.on,voice:S.voice,brief:S.brief,remind:S.remind,fs:S.fs,hc:S.hc},killLog:S.kills},null,2);
+  var data=json,name='remu-export.json';
+  if(kind==='md'){name='remu-export.md';
+    data='# Remu export\n\n## Tasks\n'+(S.tasks.map(function(t){return '- ['+(t.d?'x':' ')+'] '+t.t+(t.due?' (due '+fmt(t.due)+')':'')}).join('\n')||'_none_')+'\n\n## Memory\n'+(S.mem.map(function(m){return '- '+m.t}).join('\n')||'_none_')+'\n\n## Chat\n'+(S.chat.map(function(m){return '**'+(m.r==='u'?'You':'Remu')+':** '+m.t}).join('\n\n')||'_none_')+'\n\n## Kill switch log\n'+(S.kills.map(function(k){return '- '+k.at+' ('+k.reason+')'}).join('\n')||'_none_')+'\n'}
+  try{var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'text/plain'}));a.download=name;document.body.appendChild(a);a.click();a.remove();return}catch(e){}
+  var ta=$('ex');ta.style.display='block';ta.value=data;ta.focus();ta.select();
+}
+var PROV={gemini:{url:'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',model:'gemini-2.5-flash'},groq:{url:'https://api.groq.com/openai/v1/chat/completions',model:'llama-3.3-70b-versatile'}};
+$('s-prov').onchange=function(){S.prov=this.value;save()};
+$('s-key').onchange=function(){S.key=this.value.trim();save()};
+$('s-model').onchange=function(){S.model=this.value.trim();save()};
+if('serviceWorker' in navigator)addEventListener('load',function(){navigator.serviceWorker.register('./sw.js').catch(function(){})});
+initUI();renderChat();renderTasks();renderMem();status();maybeBrief();
+})();
+</script>
+</body>
+</html>
