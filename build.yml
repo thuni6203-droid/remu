@@ -1,0 +1,241 @@
+name: Build Remu APK
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/build.yml','index.html']
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Generate Android project
+        run: |
+          set -e
+          mkdir -p android/app/src/main/java/com/remu/app android/app/src/main/assets android/app/src/main/res/xml android/app/src/main/res/values android/app/src/main/res/mipmap-xxxhdpi
+          cp index.html android/app/src/main/assets/index.html
+          cp icon-192.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          cat > android/settings.gradle <<'REMU_EOF'
+          pluginManagement{repositories{google();mavenCentral();gradlePluginPortal()}}
+          dependencyResolutionManagement{repositories{google();mavenCentral()}}
+          rootProject.name="Remu"
+          include ':app'
+          REMU_EOF
+          cat > android/build.gradle <<'REMU_EOF'
+          plugins{id 'com.android.application' version '8.5.2' apply false}
+          REMU_EOF
+          cat > android/gradle.properties <<'REMU_EOF'
+          android.useAndroidX=true
+          org.gradle.jvmargs=-Xmx2g
+          REMU_EOF
+          cat > android/app/build.gradle <<'REMU_EOF'
+          plugins{id 'com.android.application'}
+          android{
+            namespace 'com.remu.app'
+            compileSdk 34
+            defaultConfig{applicationId 'com.remu.app';minSdk 26;targetSdk 34;versionCode 1;versionName '1.0'}
+            compileOptions{sourceCompatibility JavaVersion.VERSION_17;targetCompatibility JavaVersion.VERSION_17}
+          }
+          dependencies{implementation 'androidx.webkit:webkit:1.11.0'}
+          REMU_EOF
+          cat > android/app/src/main/AndroidManifest.xml <<'REMU_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="android.permission.INTERNET"/>
+            <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+            <uses-permission android:name="android.permission.VIBRATE"/>
+            <uses-permission android:name="com.android.alarm.permission.SET_ALARM"/>
+            <queries><intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent></queries>
+            <application android:label="Remu" android:icon="@mipmap/ic_launcher" android:allowBackup="false" android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+              <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden">
+                <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+              </activity>
+              <service android:name=".RemuAccess" android:exported="false" android:label="Remu" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+                <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>
+                <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_config"/>
+              </service>
+            </application>
+          </manifest>
+          REMU_EOF
+          cat > android/app/src/main/res/xml/accessibility_config.xml <<'REMU_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+            android:accessibilityEventTypes="typeWindowStateChanged"
+            android:accessibilityFeedbackType="feedbackGeneric"
+            android:canRetrieveWindowContent="true"
+            android:description="@string/a11y_desc"
+            android:notificationTimeout="100"/>
+          REMU_EOF
+          cat > android/app/src/main/res/values/strings.xml <<'REMU_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources><string name="a11y_desc">Lets Remu press buttons and read on-screen text only when you ask it to. The Remu stop button disables it instantly.</string></resources>
+          REMU_EOF
+          cat > android/app/src/main/java/com/remu/app/MainActivity.java <<'REMU_EOF'
+          package com.remu.app;
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.content.pm.PackageManager;
+          import android.content.pm.ResolveInfo;
+          import android.net.Uri;
+          import android.os.Bundle;
+          import android.provider.AlarmClock;
+          import android.provider.Settings;
+          import android.speech.RecognitionListener;
+          import android.speech.RecognizerIntent;
+          import android.speech.SpeechRecognizer;
+          import android.webkit.*;
+          import androidx.webkit.WebViewAssetLoader;
+          import java.util.ArrayList;
+          import java.util.List;
+          import org.json.JSONObject;
+
+          public class MainActivity extends Activity {
+            WebView web; SpeechRecognizer sr; static volatile boolean blocked=false;
+            @Override protected void onCreate(Bundle b){
+              super.onCreate(b);
+              web=new WebView(this); web.setBackgroundColor(0xFF0B1220); setContentView(web);
+              WebSettings s=web.getSettings(); s.setJavaScriptEnabled(true); s.setDomStorageEnabled(true);
+              final WebViewAssetLoader loader=new WebViewAssetLoader.Builder().addPathHandler("/assets/",new WebViewAssetLoader.AssetsPathHandler(this)).build();
+              web.setWebViewClient(new WebViewClient(){
+                @Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){return loader.shouldInterceptRequest(r.getUrl());}
+                @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){
+                  Uri u=r.getUrl(); if("appassets.androidplatform.net".equals(u.getHost())) return false;
+                  try{
+                    if("intent".equals(u.getScheme())){Intent i=Intent.parseUri(u.toString(),Intent.URI_INTENT_SCHEME);i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);startActivity(i);}
+                    else startActivity(new Intent(Intent.ACTION_VIEW,u));
+                  }catch(Exception e){}
+                  return true;
+                }
+              });
+              web.addJavascriptInterface(new Bridge(),"RemuNative");
+              web.loadUrl("https://appassets.androidplatform.net/assets/index.html");
+            }
+            void js(final String fn,final String arg){web.post(new Runnable(){public void run(){web.evaluateJavascript("window."+fn+"&&window."+fn+"("+JSONObject.quote(arg)+")",null);}});}
+            class Bridge{
+              @JavascriptInterface public void setBlocked(boolean v){blocked=v; if(v)stopListen();}
+              @JavascriptInterface public boolean openApp(String name){
+                if(blocked||name==null)return false;
+                String q=name.toLowerCase().replaceAll("[^a-z0-9]",""); if(q.length()<2)return false;
+                PackageManager pm=getPackageManager();
+                Intent mi=new Intent(Intent.ACTION_MAIN); mi.addCategory(Intent.CATEGORY_LAUNCHER);
+                List<ResolveInfo> l=pm.queryIntentActivities(mi,0);
+                ResolveInfo best=null; int bs=0;
+                for(ResolveInfo r:l){
+                  String lab=r.loadLabel(pm).toString().toLowerCase().replaceAll("[^a-z0-9]","");
+                  int sc=lab.equals(q)?3:lab.startsWith(q)?2:lab.contains(q)?1:0;
+                  if(sc>bs){bs=sc;best=r;}
+                }
+                if(best==null)return false;
+                Intent li=pm.getLaunchIntentForPackage(best.activityInfo.packageName); if(li==null)return false;
+                li.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(li); return true;
+              }
+              @JavascriptInterface public boolean setAlarm(int h,int m){
+                if(blocked)return false;
+                try{Intent i=new Intent(AlarmClock.ACTION_SET_ALARM).putExtra(AlarmClock.EXTRA_HOUR,h).putExtra(AlarmClock.EXTRA_MINUTES,m).putExtra(AlarmClock.EXTRA_MESSAGE,"Remu").putExtra(AlarmClock.EXTRA_SKIP_UI,true);i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);startActivity(i);return true;}catch(Exception e){return false;}
+              }
+              @JavascriptInterface public boolean setTimer(int sec){
+                if(blocked)return false;
+                try{Intent i=new Intent(AlarmClock.ACTION_SET_TIMER).putExtra(AlarmClock.EXTRA_LENGTH,sec).putExtra(AlarmClock.EXTRA_MESSAGE,"Remu").putExtra(AlarmClock.EXTRA_SKIP_UI,true);i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);startActivity(i);return true;}catch(Exception e){return false;}
+              }
+              @JavascriptInterface public String a11y(String cmd){
+                if(blocked)return "Remu is stopped. Re-enable it first.";
+                RemuAccess a=RemuAccess.inst;
+                if(a==null)return "Accessibility is off. Say: enable accessibility";
+                return a.run(cmd);
+              }
+              @JavascriptInterface public void openA11ySettings(){Intent i=new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);startActivity(i);}
+              @JavascriptInterface public void stopListen(){runOnUiThread(new Runnable(){public void run(){if(sr!=null){try{sr.destroy();}catch(Exception e){} sr=null;}}});}
+              @JavascriptInterface public void listen(){
+                runOnUiThread(new Runnable(){public void run(){
+                  if(blocked){js("onNativeSpeechError","Remu is stopped.");return;}
+                  if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
+                    requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO},1);
+                    js("onNativeSpeechError","Allow the microphone, then tap the mic again."); return;
+                  }
+                  if(sr!=null){try{sr.destroy();}catch(Exception e){}}
+                  sr=SpeechRecognizer.createSpeechRecognizer(MainActivity.this);
+                  sr.setRecognitionListener(new RecognitionListener(){
+                    public void onReadyForSpeech(Bundle p){}
+                    public void onBeginningOfSpeech(){}
+                    public void onRmsChanged(float v){}
+                    public void onBufferReceived(byte[] b){}
+                    public void onEndOfSpeech(){}
+                    public void onPartialResults(Bundle p){}
+                    public void onEvent(int t,Bundle p){}
+                    public void onError(int e){js("onNativeSpeechError","I didn't catch that ("+e+").");}
+                    public void onResults(Bundle r){
+                      ArrayList<String> x=r.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                      if(x!=null&&!x.isEmpty())js("onNativeSpeech",x.get(0)); else js("onNativeSpeechError","I didn't catch that.");
+                    }
+                  });
+                  Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                  i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                  sr.startListening(i);
+                }});
+              }
+            }
+          }
+          REMU_EOF
+          cat > android/app/src/main/java/com/remu/app/RemuAccess.java <<'REMU_EOF'
+          package com.remu.app;
+          import android.accessibilityservice.AccessibilityService;
+          import android.content.Intent;
+          import android.view.accessibility.AccessibilityEvent;
+          import android.view.accessibility.AccessibilityNodeInfo;
+          import java.util.List;
+          import java.util.regex.Pattern;
+
+          public class RemuAccess extends AccessibilityService {
+            static volatile RemuAccess inst;
+            static final Pattern RISK=Pattern.compile("(?i)\\b(pay|buy|purchase|order|send money|transfer|withdraw|delete|remove|uninstall|install|reset|password|pin|confirm payment|checkout)\\b");
+            @Override protected void onServiceConnected(){inst=this;}
+            @Override public void onAccessibilityEvent(AccessibilityEvent e){}
+            @Override public void onInterrupt(){}
+            @Override public boolean onUnbind(Intent i){inst=null;return super.onUnbind(i);}
+            String run(String cmd){
+              if(MainActivity.blocked)return "Remu is stopped.";
+              if(cmd.equals("back")){performGlobalAction(GLOBAL_ACTION_BACK);return "Done: back.";}
+              if(cmd.equals("home")){performGlobalAction(GLOBAL_ACTION_HOME);return "Done: home.";}
+              if(cmd.equals("recents")){performGlobalAction(GLOBAL_ACTION_RECENTS);return "Done: recent apps.";}
+              if(cmd.equals("notifications")){performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS);return "Done: notifications.";}
+              if(cmd.equals("read"))return read();
+              if(cmd.startsWith("click:"))return click(cmd.substring(6).trim());
+              return "Unknown action.";
+            }
+            String click(String t){
+              if(RISK.matcher(t).find())return "I won't press \""+t+"\". It is a high-impact action, so please do it yourself.";
+              AccessibilityNodeInfo root=getRootInActiveWindow();
+              if(root==null)return "I can't see the screen right now.";
+              List<AccessibilityNodeInfo> l=root.findAccessibilityNodeInfosByText(t);
+              for(AccessibilityNodeInfo n:l){
+                AccessibilityNodeInfo c=n;
+                while(c!=null&&!c.isClickable())c=c.getParent();
+                if(c!=null&&c.performAction(AccessibilityNodeInfo.ACTION_CLICK))return "Pressed \""+t+"\".";
+              }
+              return "I couldn't find \""+t+"\" on screen.";
+            }
+            String read(){
+              AccessibilityNodeInfo root=getRootInActiveWindow();
+              if(root==null)return "I can't see the screen right now.";
+              StringBuilder sb=new StringBuilder(); walk(root,sb,0);
+              return sb.length()==0?"Nothing readable on screen.":sb.substring(0,Math.min(sb.length(),1500));
+            }
+            void walk(AccessibilityNodeInfo n,StringBuilder sb,int d){
+              if(n==null||d>40||sb.length()>1500)return;
+              if(!n.isPassword()){CharSequence x=n.getText();if(x!=null&&x.length()>0)sb.append(x).append(". ");}
+              for(int i=0;i<n.getChildCount();i++)walk(n.getChild(i),sb,d+1);
+            }
+          }
+          REMU_EOF
+      - name: Build APK
+        run: gradle -p android assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Remu-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk

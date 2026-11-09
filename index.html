@@ -152,9 +152,10 @@ $('in').onkeydown=function(e){if(e.key==='Enter')$('send').click()};
 
 // voice input (tap to start, tap to stop)
 var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-function stopListen(){listening=false;$('mic').classList.remove('rec');$('mic').textContent='🎤';if(rec){try{rec.abort()}catch(e){}rec=null}}
+function stopListen(){listening=false;try{if(window.RemuNative)RemuNative.stopListen()}catch(e){}$('mic').classList.remove('rec');$('mic').textContent='🎤';if(rec){try{rec.abort()}catch(e){}rec=null}}
 $('mic').onclick=function(){
   if(stopped||!S.on){add('Remu is stopped or off.','s');return}
+  if(window.RemuNative){if(listening){stopListen();return}listening=true;$('mic').classList.add('rec');$('mic').textContent='●';window.onNativeSpeech=function(x){stopListen();ask(x)};window.onNativeSpeechError=function(x){stopListen();add(x,'s')};RemuNative.listen();return}
   if(!SR){add('Voice input isn’t supported in this browser. Use Chrome.','s');return}
   if(listening){stopListen();return}
   rec=new SR();rec.lang=navigator.language||'en-US';rec.interimResults=false;rec.maxAlternatives=1;
@@ -166,7 +167,7 @@ $('mic').onclick=function(){
 
 // KILL SWITCH — client-side only, no network needed
 function kill(reason){
-  stopped=true;
+  stopped=true;try{window.RemuNative&&RemuNative.setBlocked(true)}catch(e){}
   try{if(ctl)ctl.abort()}catch(e){}
   try{window.speechSynthesis&&speechSynthesis.cancel()}catch(e){}
   stopListen();
@@ -176,7 +177,7 @@ function kill(reason){
   try{if(window.speechSynthesis){var u=new SpeechSynthesisUtterance('Remu stopped');speechSynthesis.speak(u)}}catch(e){}
 }
 $('kill').onclick=function(){kill('button')};
-$('resume').onclick=function(){stopped=false;$('stopped').classList.remove('on');status();add('Remu re-enabled.','s')};
+$('resume').onclick=function(){stopped=false;try{window.RemuNative&&RemuNative.setBlocked(false)}catch(e){}$('stopped').classList.remove('on');status();add('Remu re-enabled.','s')};
 
 // tasks
 function renderTasks(){
@@ -254,27 +255,35 @@ $('s-hc').onchange=function(){S.hc=this.checked;save();initUI()};
 $('fm').onclick=function(){S.fs=Math.max(13,S.fs-2);save();initUI()};
 $('fp').onclick=function(){S.fs=Math.min(26,S.fs+2);save();initUI()};
 $('imB').onclick=function(){$('imp').click()};
-$('imp').onchange=function(){var f=this.files[0];if(!f)return;f.text().then(function(x){var j=JSON.parse(x);if(!confirm('Replace current data with this backup?'))return;S=Object.assign(defaults(),{chat:j.chat||[],tasks:j.tasks||[],mem:j.memory||[],kills:j.killLog||[]},j.settings||{});save();initUI();renderChat();renderTasks();renderMem();status()}).catch(function(){add('That file couldn’t be read.','s')})};
+$('imp').onchange=function(){var f=this.files[0];if(!f)return;f.text().then(function(x){var j=JSON.parse(x);if(!confirm('Replace current data with this backup?'))return;S=Object.assign(defaults(),{chat:j.chat||[],tasks:j.tasks||[],mem:j.memory||[],apps:j.apps||{},kills:j.killLog||[]},j.settings||{});save();initUI();renderChat();renderTasks();renderMem();status()}).catch(function(){add('That file couldn’t be read.','s')})};
 async function exportData(kind){
-  var json=JSON.stringify({exported:new Date().toISOString(),chat:S.chat,tasks:S.tasks,memory:S.mem,settings:{on:S.on,voice:S.voice,brief:S.brief,remind:S.remind,fs:S.fs,hc:S.hc},killLog:S.kills},null,2);
+  var json=JSON.stringify({exported:new Date().toISOString(),chat:S.chat,tasks:S.tasks,memory:S.mem,apps:S.apps||{},settings:{on:S.on,voice:S.voice,brief:S.brief,remind:S.remind,fs:S.fs,hc:S.hc},killLog:S.kills},null,2);
   var data=json,name='remu-export.json';
   if(kind==='md'){name='remu-export.md';
     data='# Remu export\n\n## Tasks\n'+(S.tasks.map(function(t){return '- ['+(t.d?'x':' ')+'] '+t.t+(t.due?' (due '+fmt(t.due)+')':'')}).join('\n')||'_none_')+'\n\n## Memory\n'+(S.mem.map(function(m){return '- '+m.t}).join('\n')||'_none_')+'\n\n## Chat\n'+(S.chat.map(function(m){return '**'+(m.r==='u'?'You':'Remu')+':** '+m.t}).join('\n\n')||'_none_')+'\n\n## Kill switch log\n'+(S.kills.map(function(k){return '- '+k.at+' ('+k.reason+')'}).join('\n')||'_none_')+'\n'}
   try{var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'text/plain'}));a.download=name;document.body.appendChild(a);a.click();a.remove();return}catch(e){}
   var ta=$('ex');ta.style.display='block';ta.value=data;ta.focus();ta.select();
 }
-var APPS={youtube:'https://www.youtube.com',whatsapp:'https://wa.me/',maps:'https://www.google.com/maps',gmail:'mailto:',spotify:'https://open.spotify.com',instagram:'https://www.instagram.com',facebook:'https://www.facebook.com',telegram:'https://t.me/',tiktok:'https://www.tiktok.com',netflix:'https://www.netflix.com',chrome:'https://www.google.com',google:'https://www.google.com',twitter:'https://x.com',x:'https://x.com',camera:'intent:#Intent;action=android.media.action.IMAGE_CAPTURE;end',settings:'intent:#Intent;action=android.settings.SETTINGS;end',clock:'intent:#Intent;action=android.intent.action.SHOW_ALARMS;end',phone:'tel:',messages:'sms:'};
+var APPS={github:'https://github.com',drive:'https://drive.google.com',googledrive:'https://drive.google.com',photos:'https://photos.google.com',googlephotos:'https://photos.google.com',chatgpt:'https://chatgpt.com',claude:'https://claude.ai',grok:'https://grok.com',duolingo:'https://www.duolingo.com',jumia:'https://www.jumia.co.ke',kilimall:'https://www.kilimall.co.ke',safaricom:'https://www.safaricom.co.ke',airtel:'https://www.airtel.co.ke',calendar:'https://calendar.google.com',contacts:'https://contacts.google.com',keep:'https://keep.google.com',keepnotes:'https://keep.google.com',lens:'https://lens.google.com',mapsgo:'https://www.google.com/maps',playstore:'https://play.google.com/store',pinterest:'https://www.pinterest.com',youtube:'https://www.youtube.com',whatsapp:'https://wa.me/',maps:'https://www.google.com/maps',gmail:'mailto:',spotify:'https://open.spotify.com',instagram:'https://www.instagram.com',facebook:'https://www.facebook.com',telegram:'https://t.me/',tiktok:'https://www.tiktok.com',netflix:'https://www.netflix.com',chrome:'https://www.google.com',google:'https://www.google.com',twitter:'https://x.com',x:'https://x.com',camera:'intent:#Intent;action=android.media.action.IMAGE_CAPTURE;end',settings:'intent:#Intent;action=android.settings.SETTINGS;end',clock:'intent:#Intent;action=android.intent.action.SHOW_ALARMS;end',phone:'tel:',messages:'sms:'};
 function say(t){add(t,'a');speak(t)}
 function lnk(label,url){var d=document.createElement('div');d.className='m a';var a=document.createElement('a');a.href=url;a.textContent=label;a.style.cssText='color:var(--ac);font-weight:700;text-decoration:underline';d.appendChild(a);$('log').appendChild(d);$('log').scrollTop=1e9}
 var MU={s:1,sec:1,second:1,m:60,min:60,minute:60,h:3600,hr:3600,hour:3600,d:86400,day:86400};
 function route(text){
   var t=text.trim(),l=t.toLowerCase().replace(/[.!?]+$/,''),m;
   var U=function(){add(text,'u')};
-  if(l==='help'||l==='commands'){U();say('Try: open YouTube • search cats • play lofi • navigate to Nairobi • call 0712345678 • text 0712345678 hello • email a@b.com hi • timer 5 minutes • alarm 7:30am • add task buy milk • remind me to call Sam in 30 minutes • remember … • briefing • time • date');return true}
+  if(l==='help'||l==='commands'){U();say('Try: open YouTube • search cats • play lofi • navigate to Nairobi • call 0712345678 • text 0712345678 hello • email a@b.com hi • timer 5 minutes • alarm 7:30am • add task buy milk • remind me to call Sam in 30 minutes • remember … • briefing • time • date • teach Uber = https://m.uber.com • forget Uber • my apps • (Android app only) go back • go home • recent apps • notifications • click Next • read screen • enable accessibility');return true}
+  if(m=t.match(/^teach\s+(.+?)\s*=\s*(\S+)$/i)){U();var kk=m[1].toLowerCase().replace(/[^a-z0-9]/g,'');if(!kk){say('Give the app a name first.');return true}var uu=m[2];if(!/^(https?:|intent:|market:|tel:|sms:|mailto:)/i.test(uu)){if(/^[\w-]+(\.[\w-]+)+/.test(uu))uu='https://'+uu;else{say('The link must start with https:// or be a website like example.com.');return true}}
+    S.apps=S.apps||{};S.apps[kk]=uu;save();say('Learned: '+m[1]+'. Now say: open '+m[1]+'.');return true}
+  if(m=l.match(/^forget\s+(.+)$/)){U();var fk=m[1].replace(/[^a-z0-9]/g,'');if(S.apps&&S.apps[fk]){delete S.apps[fk];save();say('Forgot '+m[1]+'.')}else say('I haven\u2019t been taught that.');return true}
+  if(l==='my apps'||l==='apps'){U();say('Built in: '+Object.keys(APPS).join(', ')+'.'+(S.apps&&Object.keys(S.apps).length?'\nTaught by you: '+Object.keys(S.apps).join(', ')+'.':''));return true}
+  if(window.RemuNative){var ac=null;
+    if(/^(enable|turn on) accessibility$/.test(l)){U();RemuNative.openA11ySettings();say('Opening Accessibility settings. Find Remu and switch it on.');return true}
+    if(/^(go )?back$/.test(l))ac='back';else if(/^(go )?home$/.test(l))ac='home';else if(/^(recent apps|recents)$/.test(l))ac='recents';else if(/^(open )?notifications$/.test(l))ac='notifications';else if(/^(read( the)? screen|what'?s on (the |my )?screen)$/.test(l))ac='read';else if(m=l.match(/^(click|tap|press)\s+(.+)$/))ac='click:'+m[2];
+    if(ac){U();say(RemuNative.a11y(ac));return true}}
   if(/^(what('s| is) the time|time|what time is it|current time)$/.test(l)){U();say('It is '+new Date().toLocaleTimeString([],{timeStyle:'short'})+'.');return true}
   if(/^(what('s| is) (today'?s )?date|date|what day is it( today)?)$/.test(l)){U();say('Today is '+new Date().toDateString()+'.');return true}
   if(m=l.match(/^(open|launch|start)\s+(.+)$/)){U();var n=m[2].replace(/^(the|my)\s+/,'').replace(/\s*app$/,'').trim();
-    if(APPS[n]){say('Tap to open '+n+'.');lnk('Open '+n,APPS[n])}else if(/^[\w-]+(\.[\w-]+)+$/.test(n)){say('Tap to open '+n+'.');lnk('Open '+n,'https://'+n)}else say('I don\u2019t know that app yet. Try a name like YouTube, WhatsApp, Maps, Camera, Settings, or a website like example.com.');return true}
+    var key=n.replace(/[^a-z0-9]/g,'');if(window.RemuNative&&!(S.apps&&S.apps[key])&&RemuNative.openApp(n)){say('Opening '+n+'.');return true}var url=(S.apps&&S.apps[key])||APPS[key];if(url){say('Tap to open '+n+'.');lnk('Open '+n,url)}else if(/^[\w-]+(\.[\w-]+)+$/.test(n)){say('Tap to open '+n+'.');lnk('Open '+n,'https://'+n)}else say('I don\u2019t know "'+n+'" yet. Teach me: teach '+n+' = https://link (a website or app link).');return true}
   if(m=t.match(/^(search|google|look up)( for)?\s+(.+)$/i)){U();say('Searching for '+m[3]+'.');lnk('Open results','https://www.google.com/search?q='+encodeURIComponent(m[3]));return true}
   if(m=t.match(/^(play|watch)\s+(.+?)(\s+on youtube)?$/i)){U();say('Tap to find '+m[2]+' on YouTube.');lnk('Open YouTube results','https://www.youtube.com/results?search_query='+encodeURIComponent(m[2]));return true}
   if(m=t.match(/^(navigate|directions|take me) to\s+(.+)$/i)){U();say('Route to '+m[2]+'.');lnk('Open in Maps','https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(m[2]));return true}
@@ -282,11 +291,15 @@ function route(text){
   if(m=t.match(/^(text|sms)\s+(\+?[\d][\d\s-]{3,})\s+(.+)$/i)){U();var q=m[2].replace(/[\s-]/g,'');say('Preview \u2014 To '+q+': \u201c'+m[3]+'\u201d. Nothing is sent until you press send in Messages.');lnk('Open Messages','sms:'+q+'?body='+encodeURIComponent(m[3]));return true}
   if(m=t.match(/^email\s+(\S+@\S+)\s+(.+)$/i)){U();say('Preview \u2014 To '+m[1]+': \u201c'+m[2]+'\u201d. Nothing is sent until you press send.');lnk('Open email','mailto:'+m[1]+'?body='+encodeURIComponent(m[2]));return true}
   if(m=l.match(/^(set (a |an )?)?timer( for)?\s+(\d+)\s*(seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)$/)){U();var sec=+m[4]*MU[m[5].replace(/s$/,'')||m[5]]||+m[4]*MU[m[5]];if(!sec)sec=+m[4]*60;
-    say('Timer set for '+m[4]+' '+m[5]+' (works while Remu is open).');lnk('Also set it in Clock app','intent:#Intent;action=android.intent.action.SET_TIMER;i.android.intent.extra.alarm.LENGTH='+sec+';end');
+    if(window.RemuNative&&RemuNative.setTimer(sec)){say('Timer set for '+m[4]+' '+m[5]+' in your Clock app.');return true}
+    say('Timer set for '+m[4]+' '+m[5]+'. It rings only while Remu is open.');
     setTimeout(function(){if(stopped||!S.on)return;var x='Timer finished.';add(x,'a');speak(x);try{navigator.vibrate&&navigator.vibrate([300,150,300])}catch(e){}try{if(window.Notification&&Notification.permission==='granted')new Notification('Remu',{body:x})}catch(e){}},sec*1000);return true}
   if(m=l.match(/^(set (an? )?)?alarm( for| at)?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/)){U();var H=+m[4],M=+(m[5]||0);if(m[6]==='pm'&&H<12)H+=12;if(m[6]==='am'&&H===12)H=0;
     if(H>23||M>59){say('That time isn\u2019t valid.');return true}
-    say('Tap to set the alarm for '+('0'+H).slice(-2)+':'+('0'+M).slice(-2)+' in your Clock app.');lnk('Set alarm','intent:#Intent;action=android.intent.action.SET_ALARM;i.android.intent.extra.alarm.HOUR='+H+';i.android.intent.extra.alarm.MINUTES='+M+';S.android.intent.extra.alarm.MESSAGE=Remu;end');return true}
+    if(window.RemuNative&&RemuNative.setAlarm(H,M)){say('Alarm set for '+('0'+H).slice(-2)+':'+('0'+M).slice(-2)+' in your Clock app.');return true}
+    var ad=new Date();ad.setHours(H,M,0,0);if(ad<=new Date())ad.setDate(ad.getDate()+1);var hm=('0'+H).slice(-2)+':'+('0'+M).slice(-2);
+    say('Alarm set for '+hm+'. It rings only while Remu is open \u2014 real background alarms need the Android app stage.');
+    setTimeout(function(){if(stopped||!S.on)return;var x='Alarm: it is '+hm+'.';add(x,'a');speak(x);try{navigator.vibrate&&navigator.vibrate([400,200,400,200,400])}catch(e){}try{if(window.Notification&&Notification.permission==='granted')new Notification('Remu',{body:x})}catch(e){}},ad-new Date());return true}
   if(m=t.match(/^remind me (?:to |about )?(.+?)\s+in\s+(\d+)\s*(seconds?|minutes?|mins?|hours?|hrs?|days?|m|h|d)$/i)){U();var k=m[3].toLowerCase().replace(/s$/,'');S.tasks.push({t:m[1],d:false,at:Date.now(),due:Date.now()+(+m[2])*(MU[k]||60)*1000});save();renderTasks();say('Reminder added: '+m[1]+'.'+(S.remind?'':' Turn on Task reminders in Settings so I can alert you.'));return true}
   if(m=t.match(/^(add task|task|todo|add to my list)[:\s]+(.+)$/i)){U();S.tasks.push({t:m[2],d:false,at:Date.now(),due:null});save();renderTasks();say('Task added: '+m[2]+'.');return true}
   return false}
