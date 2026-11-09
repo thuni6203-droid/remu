@@ -76,6 +76,7 @@ body.hc{--bg:#000;--card:#000;--line:#fff;--tx:#fff;--mut:#ddd}
       <h3>Remu</h3>
       <div class="row"><span>Remu on</span><input type="checkbox" id="s-on" checked></div>
       <div class="row"><span>Read answers aloud</span><input type="checkbox" id="s-voice" checked></div>
+      <div class="row"><span>Keep listening after replies (needs voice on)</span><input type="checkbox" id="s-conv"></div>
       <div class="row"><span>Daily briefing when opened</span><input type="checkbox" id="s-brief"></div>
       <div class="row"><span>Task reminders (only while Remu is open)</span><input type="checkbox" id="s-rem"></div>
       <div class="row"><span>Text size</span><button class="b" id="fm">A−</button><button class="b" id="fp">A+</button></div>
@@ -115,9 +116,9 @@ addEventListener('online',status);addEventListener('offline',status);
 // chat
 function add(t,c){var d=document.createElement('div');d.className='m '+c;d.textContent=t;$('log').appendChild(d);$('log').scrollTop=1e9;return d}
 function renderChat(){$('log').innerHTML='';if(!S.chat.length)add('Good day. I’m Remu. Type or tap the mic to talk.','s');S.chat.forEach(function(m){add(m.t,m.r==='u'?'u':'a')})}
-function speak(t){if(!S.voice||stopped||!S.on||!window.speechSynthesis)return;speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(t);speechSynthesis.speak(u)}
+function speak(t){if(!S.voice||stopped||!S.on||!window.speechSynthesis)return;speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(t);u.onend=function(){if(S.conv&&!stopped&&S.on&&!listening)setTimeout(function(){if(S.conv&&!stopped&&!listening)$('mic').click()},400)};speechSynthesis.speak(u)}
 var KILLRE=/(kill switch|stop everything|emergency stop)/i;
-var SYS='You are REMU, a calm, confident, professional personal AI assistant inspired by JARVIS. Keep replies short and clear. Never claim to have performed an action (messages, device control, reminders) you cannot do from this chat; say what is needed instead. Remu can currently only chat and the user manages tasks in the Tasks tab.';
+var SYS='You are REMU, a calm, confident, professional personal AI assistant inspired by JARVIS. Keep replies short and clear. Never claim to have performed an action (messages, device control, reminders) you cannot do from this chat; say what is needed instead. Remu can also run commands itself (open apps, search, timers, alarms, tasks, call/text/email shortcuts) when the user types them, such as open YouTube. For anything else you cannot do, say so plainly.';
 
 function sysp(){return SYS+(S.mem.length?'\nThings the user asked you to remember:\n- '+S.mem.map(function(m){return m.t}).join('\n- '):'')+'\nToday is '+new Date().toDateString()+'.'}
 async function ask(text){
@@ -127,6 +128,7 @@ async function ask(text){
   var rm=text.match(/^remember(?: that|:)?\s+(.+)/i);
   if(rm){if(confirm('Save to memory?\n\n'+rm[1])){addMem(rm[1]);add('Saved to memory: '+rm[1],'s')}else add('Not saved.','s');return}
   if(/^(daily )?briefing\.?$/i.test(text.trim())){briefing();return}
+  if(route(text))return;
   if(!navigator.onLine){add('Online AI unavailable — you’re offline. Tasks and notes still work.','s');return}
   S.chat.push({r:'u',t:text});save();add(text,'u');
   var bub=add('…','a');
@@ -212,7 +214,7 @@ $('del').onclick=function(){
 };
 
 function defaults(){return{chat:[],tasks:[],mem:[],on:true,voice:true,kills:[],brief:false,remind:false,fs:16,hc:false,lastBrief:'',prov:'gemini',key:'',model:''}}
-function initUI(){document.body.style.fontSize=S.fs+'px';document.body.classList.toggle('hc',!!S.hc);$('s-on').checked=S.on;$('s-voice').checked=S.voice;$('s-brief').checked=S.brief;$('s-rem').checked=S.remind;$('s-hc').checked=S.hc;$('s-prov').value=S.prov;$('s-key').value=S.key;$('s-model').value=S.model}
+function initUI(){document.body.style.fontSize=S.fs+'px';document.body.classList.toggle('hc',!!S.hc);$('s-on').checked=S.on;$('s-voice').checked=S.voice;$('s-brief').checked=S.brief;$('s-rem').checked=S.remind;$('s-hc').checked=S.hc;$('s-conv').checked=!!S.conv;$('s-prov').value=S.prov;$('s-key').value=S.key;$('s-model').value=S.model}
 function fmt(ts){return new Date(ts).toLocaleString([],{dateStyle:'medium',timeStyle:'short'})}
 function mkBtn(txt,fn){var x=document.createElement('button');x.className='x';x.textContent=txt;x.onclick=fn;return x}
 function renderTasks(){
@@ -261,6 +263,34 @@ async function exportData(kind){
   try{var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'text/plain'}));a.download=name;document.body.appendChild(a);a.click();a.remove();return}catch(e){}
   var ta=$('ex');ta.style.display='block';ta.value=data;ta.focus();ta.select();
 }
+var APPS={youtube:'https://www.youtube.com',whatsapp:'https://wa.me/',maps:'https://www.google.com/maps',gmail:'mailto:',spotify:'https://open.spotify.com',instagram:'https://www.instagram.com',facebook:'https://www.facebook.com',telegram:'https://t.me/',tiktok:'https://www.tiktok.com',netflix:'https://www.netflix.com',chrome:'https://www.google.com',google:'https://www.google.com',twitter:'https://x.com',x:'https://x.com',camera:'intent:#Intent;action=android.media.action.IMAGE_CAPTURE;end',settings:'intent:#Intent;action=android.settings.SETTINGS;end',clock:'intent:#Intent;action=android.intent.action.SHOW_ALARMS;end',phone:'tel:',messages:'sms:'};
+function say(t){add(t,'a');speak(t)}
+function lnk(label,url){var d=document.createElement('div');d.className='m a';var a=document.createElement('a');a.href=url;a.textContent=label;a.style.cssText='color:var(--ac);font-weight:700;text-decoration:underline';d.appendChild(a);$('log').appendChild(d);$('log').scrollTop=1e9}
+var MU={s:1,sec:1,second:1,m:60,min:60,minute:60,h:3600,hr:3600,hour:3600,d:86400,day:86400};
+function route(text){
+  var t=text.trim(),l=t.toLowerCase().replace(/[.!?]+$/,''),m;
+  var U=function(){add(text,'u')};
+  if(l==='help'||l==='commands'){U();say('Try: open YouTube • search cats • play lofi • navigate to Nairobi • call 0712345678 • text 0712345678 hello • email a@b.com hi • timer 5 minutes • alarm 7:30am • add task buy milk • remind me to call Sam in 30 minutes • remember … • briefing • time • date');return true}
+  if(/^(what('s| is) the time|time|what time is it|current time)$/.test(l)){U();say('It is '+new Date().toLocaleTimeString([],{timeStyle:'short'})+'.');return true}
+  if(/^(what('s| is) (today'?s )?date|date|what day is it( today)?)$/.test(l)){U();say('Today is '+new Date().toDateString()+'.');return true}
+  if(m=l.match(/^(open|launch|start)\s+(.+)$/)){U();var n=m[2].replace(/^(the|my)\s+/,'').replace(/\s*app$/,'').trim();
+    if(APPS[n]){say('Tap to open '+n+'.');lnk('Open '+n,APPS[n])}else if(/^[\w-]+(\.[\w-]+)+$/.test(n)){say('Tap to open '+n+'.');lnk('Open '+n,'https://'+n)}else say('I don\u2019t know that app yet. Try a name like YouTube, WhatsApp, Maps, Camera, Settings, or a website like example.com.');return true}
+  if(m=t.match(/^(search|google|look up)( for)?\s+(.+)$/i)){U();say('Searching for '+m[3]+'.');lnk('Open results','https://www.google.com/search?q='+encodeURIComponent(m[3]));return true}
+  if(m=t.match(/^(play|watch)\s+(.+?)(\s+on youtube)?$/i)){U();say('Tap to find '+m[2]+' on YouTube.');lnk('Open YouTube results','https://www.youtube.com/results?search_query='+encodeURIComponent(m[2]));return true}
+  if(m=t.match(/^(navigate|directions|take me) to\s+(.+)$/i)){U();say('Route to '+m[2]+'.');lnk('Open in Maps','https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(m[2]));return true}
+  if(m=t.match(/^(call|dial)\s+(\+?[\d][\d\s-]{3,})$/i)){U();var p=m[2].replace(/[\s-]/g,'');say('Ready to call '+p+'. You press the call button.');lnk('Call '+p,'tel:'+p);return true}
+  if(m=t.match(/^(text|sms)\s+(\+?[\d][\d\s-]{3,})\s+(.+)$/i)){U();var q=m[2].replace(/[\s-]/g,'');say('Preview \u2014 To '+q+': \u201c'+m[3]+'\u201d. Nothing is sent until you press send in Messages.');lnk('Open Messages','sms:'+q+'?body='+encodeURIComponent(m[3]));return true}
+  if(m=t.match(/^email\s+(\S+@\S+)\s+(.+)$/i)){U();say('Preview \u2014 To '+m[1]+': \u201c'+m[2]+'\u201d. Nothing is sent until you press send.');lnk('Open email','mailto:'+m[1]+'?body='+encodeURIComponent(m[2]));return true}
+  if(m=l.match(/^(set (a |an )?)?timer( for)?\s+(\d+)\s*(seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)$/)){U();var sec=+m[4]*MU[m[5].replace(/s$/,'')||m[5]]||+m[4]*MU[m[5]];if(!sec)sec=+m[4]*60;
+    say('Timer set for '+m[4]+' '+m[5]+' (works while Remu is open).');lnk('Also set it in Clock app','intent:#Intent;action=android.intent.action.SET_TIMER;i.android.intent.extra.alarm.LENGTH='+sec+';end');
+    setTimeout(function(){if(stopped||!S.on)return;var x='Timer finished.';add(x,'a');speak(x);try{navigator.vibrate&&navigator.vibrate([300,150,300])}catch(e){}try{if(window.Notification&&Notification.permission==='granted')new Notification('Remu',{body:x})}catch(e){}},sec*1000);return true}
+  if(m=l.match(/^(set (an? )?)?alarm( for| at)?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/)){U();var H=+m[4],M=+(m[5]||0);if(m[6]==='pm'&&H<12)H+=12;if(m[6]==='am'&&H===12)H=0;
+    if(H>23||M>59){say('That time isn\u2019t valid.');return true}
+    say('Tap to set the alarm for '+('0'+H).slice(-2)+':'+('0'+M).slice(-2)+' in your Clock app.');lnk('Set alarm','intent:#Intent;action=android.intent.action.SET_ALARM;i.android.intent.extra.alarm.HOUR='+H+';i.android.intent.extra.alarm.MINUTES='+M+';S.android.intent.extra.alarm.MESSAGE=Remu;end');return true}
+  if(m=t.match(/^remind me (?:to |about )?(.+?)\s+in\s+(\d+)\s*(seconds?|minutes?|mins?|hours?|hrs?|days?|m|h|d)$/i)){U();var k=m[3].toLowerCase().replace(/s$/,'');S.tasks.push({t:m[1],d:false,at:Date.now(),due:Date.now()+(+m[2])*(MU[k]||60)*1000});save();renderTasks();say('Reminder added: '+m[1]+'.'+(S.remind?'':' Turn on Task reminders in Settings so I can alert you.'));return true}
+  if(m=t.match(/^(add task|task|todo|add to my list)[:\s]+(.+)$/i)){U();S.tasks.push({t:m[2],d:false,at:Date.now(),due:null});save();renderTasks();say('Task added: '+m[2]+'.');return true}
+  return false}
+$('s-conv').onchange=function(){S.conv=this.checked;save();if(S.conv&&!S.voice)add('Turn on \u201cRead answers aloud\u201d so I can keep listening after I speak.','s')};
 var PROV={gemini:{url:'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',model:'gemini-2.5-flash'},groq:{url:'https://api.groq.com/openai/v1/chat/completions',model:'llama-3.3-70b-versatile'}};
 $('s-prov').onchange=function(){S.prov=this.value;save()};
 $('s-key').onchange=function(){S.key=this.value.trim();save()};
